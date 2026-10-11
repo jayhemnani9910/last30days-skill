@@ -1957,6 +1957,16 @@ class TestYouTubeDateWindowByFreshnessMode(unittest.TestCase):
         out = self._sc_search(["2017-03-01", "2020-05-05"], None)
         self.assertEqual({i["video_id"] for i in out["items"]}, {"s0", "s1"})
 
+    def test_ytdlp_drops_videos_published_after_window_end(self):
+        # --as-of window: videos uploaded after TO are neither in range nor a fallback.
+        dates = ["2026-10-20", "2026-11-01", "2026-12-01", "2026-10-01", "2017-03-01"]
+        out = self._search(dates, "evergreen_ok")
+        self.assertEqual({i["video_id"] for i in out["items"]}, {"v3", "v4"})
+
+    def test_sc_drops_videos_published_after_window_end(self):
+        out = self._sc_search(["2026-10-20", "2026-11-01", "2026-12-01", "2017-03-01"], "evergreen_ok")
+        self.assertEqual({i["video_id"] for i in out["items"]}, {"s3"})
+
 
 if __name__ == "__main__":
     unittest.main()

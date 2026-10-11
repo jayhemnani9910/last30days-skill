@@ -489,14 +489,17 @@ _RECENT_FRESHNESS_MODES = frozenset({"strict_recent", "balanced_recent"})
 def _apply_date_window(
     items: List[Dict[str, Any]],
     from_date: str,
+    to_date: str,
     freshness_mode: Optional[str],
 ) -> List[Dict[str, Any]]:
     """Prefer in-window videos; scope the keep-all fallback by freshness mode.
 
+    Videos published after ``to_date`` (an --as-of window) are never kept.
     3+ in-window videos: keep only those (every mode). Fewer: recent modes
     keep only the in-window ones; evergreen_ok and unknown/None keep all so
     evergreen topics can still fall back to older videos.
     """
+    items = [i for i in items if not (i["date"] and i["date"] > to_date)]
     recent = [i for i in items if i["date"] and i["date"] >= from_date]
     if len(recent) >= 3:
         _log(f"Found {len(recent)} videos within date range")
@@ -645,7 +648,7 @@ def search_youtube(
 
         # Date filter: prefer recent items; the keep-all fallback is scoped
         # by freshness mode (evergreen only), see _apply_date_window.
-        items = _apply_date_window(items, from_date, freshness_mode)
+        items = _apply_date_window(items, from_date, to_date, freshness_mode)
 
         # Sort by views descending
         items.sort(key=lambda x: x["engagement"]["views"], reverse=True)
@@ -1667,7 +1670,7 @@ def search_youtube_sc(
         })
 
     # Date filter (keep-all fallback scoped by freshness mode)
-    items = _apply_date_window(items, from_date, freshness_mode)
+    items = _apply_date_window(items, from_date, to_date, freshness_mode)
 
     # Sort by views
     items.sort(key=lambda x: x["engagement"]["views"], reverse=True)
