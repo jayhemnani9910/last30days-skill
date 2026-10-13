@@ -82,8 +82,8 @@ _ytdlp_slots = threading.Semaphore(_YTDLP_MAX_CONCURRENT)
 # every entity sub-run; cache hits avoid the redundant expensive --dump-json work.
 # Inflight coalescing prevents N concurrent identical searches from all missing
 # the cache and stampeding YouTube together.
-_search_cache: Dict[Tuple[str, int, str], Dict[str, Any]] = {}
-_search_inflight: Dict[Tuple[str, int, str], tuple[threading.Event, list]] = {}
+_search_cache: Dict[Tuple[str, int, str, str, Optional[str]], Dict[str, Any]] = {}
+_search_inflight: Dict[Tuple[str, int, str, str, Optional[str]], tuple[threading.Event, list]] = {}
 _search_cache_lock = threading.Lock()
 # Comments are enrichment, not core evidence: keep the budget tight so a slow
 # comment API can never dominate a run's wall clock (bounded to 3 videos).
@@ -198,7 +198,7 @@ def _run_ytdlp(cmd: List[str], *, timeout: float) -> subproc.SubprocResult:
 
 
 def _claim_search_slot(
-    cache_key: Tuple[str, int, str],
+    cache_key: Tuple[str, int, str, str, Optional[str]],
 ) -> tuple[Optional[Dict[str, Any]], Optional[threading.Event], Optional[list], bool]:
     """Return ``(cached, event, slot, is_leader)`` for search coalesce.
 
@@ -220,7 +220,7 @@ def _claim_search_slot(
 
 
 def _finish_search_slot(
-    cache_key: Tuple[str, int, str],
+    cache_key: Tuple[str, int, str, str, Optional[str]],
     payload: Dict[str, Any],
     *,
     event: threading.Event,
@@ -539,7 +539,7 @@ def search_youtube(
 
     count = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["default"])
     core_topic = _extract_core_subject(topic)
-    cache_key = (core_topic, count, from_date, freshness_mode)
+    cache_key = (core_topic, count, from_date, to_date, freshness_mode)
     timeout = _search_timeout()
 
     cached, event, slot, is_leader = _claim_search_slot(cache_key)
