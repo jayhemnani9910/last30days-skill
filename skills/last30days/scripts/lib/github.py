@@ -750,8 +750,8 @@ def search_github_person(
     _log(f"Person-mode search for @{username} (since {from_date})")
 
     # Phase 1: PR velocity via search API
-    total_q = urllib.parse.quote(f"author:{username} type:pr created:>{from_date}")
-    merged_q = urllib.parse.quote(f"author:{username} type:pr is:merged created:>{from_date}")
+    total_q = urllib.parse.quote(f"author:{username} type:pr created:{from_date}..{to_date}")
+    merged_q = urllib.parse.quote(f"author:{username} type:pr is:merged created:{from_date}..{to_date}")
 
     total_url = f"{SEARCH_URL}?q={total_q}&per_page=1"
     merged_url = f"{SEARCH_URL}?q={merged_q}&sort=reactions&order=desc&per_page=100"
@@ -823,7 +823,7 @@ def search_github_person(
     num_repos = len(repo_pr_counts)
     velocity_text = (
         f"GitHub Person Profile: @{username}\n\n"
-        f"CONTRIBUTION VELOCITY (last {(to_date > from_date) and 30 or 30} days)\n"
+        f"CONTRIBUTION VELOCITY (last {dates.days_ago(from_date, to_date)} days)\n"
         f"- {merged_count} PRs merged across {num_repos} repos ({merge_rate}% merge rate)\n"
         f"- {total_prs} total PRs submitted, {open_prs} still open\n"
     )

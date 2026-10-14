@@ -511,6 +511,40 @@ class TestPersonPushEventsLane(unittest.TestCase):
         self.assertEqual(items[0]["metadata"]["event_id"], "2")
 
 
+class TestPersonVelocityWindow(unittest.TestCase):
+    """Person-mode PR counts must cover the requested window, not up to today."""
+
+    def _run(self, from_date, to_date):
+        queries = []
+
+        def fetch(url, **kwargs):
+            if "search/issues" in url:
+                queries.append(
+                    urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"][0]
+                )
+                return {"total_count": 4, "items": []}
+            return []
+
+        with patch.object(github, "_resolve_token", return_value="t"), \
+                patch.object(github, "_fetch_json", side_effect=fetch):
+            items = github.search_github_person("kurt", from_date, to_date, token="t")
+        return queries, items
+
+    def test_pr_searches_end_at_window_end(self):
+        queries, _ = self._run("2026-05-31", "2026-06-30")
+
+        self.assertEqual(len(queries), 2)
+        for q in queries:
+            self.assertIn("created:2026-05-31..2026-06-30", q)
+            self.assertEqual(q.count("created:"), 1)
+
+    def test_velocity_label_uses_window_length(self):
+        _, items = self._run("2026-07-16", "2026-10-14")
+
+        self.assertIn("CONTRIBUTION VELOCITY (last 90 days)", items[0]["snippet"])
+
+
+
 class TestStripSearchQualifiers(unittest.TestCase):
     """Planner-injected GitHub search qualifiers must never reach the query
     builder: search_github appends its own created:>{from_date}, and two
