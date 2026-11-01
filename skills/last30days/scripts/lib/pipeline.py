@@ -3066,6 +3066,16 @@ def run(
         bundle.items_by_source, topic=topic, config=config, depth=depth, mock=mock,
         elapsed=time.monotonic() - run_started, out_of_time=out_of_time_sources,
     )
+    # Fusion gates on identity too, but the footer counts and Top voices read
+    # this per-source view, so a namesake left here still reaches the report.
+    # Gated after enrichment so a backfilled transcript can supply the anchor.
+    items_by_source = {
+        source: [
+            item for item in items
+            if entity_extract.matches_person_identity(item, plan.person_identity_anchors, x_handle)
+        ]
+        for source, items in items_by_source.items()
+    }
     retained_markets = {
         source_item_key(item) for item in items_by_source.get("polymarket", [])
     }
@@ -3668,6 +3678,7 @@ def _finalize_items_by_source(
             "topic": topic,
             "depth": depth,
         }
+        _key_youtube_fixture_by_entity_count(enrichment_request, source, config)
         if source == "youtube" and items and not mock and source not in (out_of_time or ()):
             # Same budget-at-the-survivors principle as the digg branch
             # below: retrieval-time transcripts go to each search's
@@ -3685,6 +3696,7 @@ def _finalize_items_by_source(
                 )
                 youtube_yt.backfill_transcripts(
                     items, topic=topic, depth=depth, token=sc_token,
+                    entity_count=_comparison_entity_count(config),
                 )
                 http.fixture_source_record(enrichment_request, schema.to_dict(items))
         # Post-merge topic-relevance filter for Polymarket: comparison queries
@@ -5234,6 +5246,7 @@ def _retrieve_stream(*args, **kwargs) -> tuple[list[dict], dict]:
         "date_range": list(kwargs.get("date_range") or ()),
         "depth": kwargs.get("depth") or "",
     }
+    _key_youtube_fixture_by_entity_count(fixture_request, source, kwargs.get("config"))
     module_backed = source in {
         "reddit",
         "x",
@@ -5538,6 +5551,20 @@ def _fetch_youtube_stream(
         )
 
 
+def _comparison_entity_count(config: dict[str, Any] | None) -> int:
+    return int((config or {}).get("_comparison_entity_count") or 1)
+
+
+def _key_youtube_fixture_by_entity_count(
+    request: dict[str, Any], source: str, config: dict[str, Any] | None,
+) -> None:
+    # Only comparison runs carry the count, so fixtures already recorded for
+    # single-topic runs keep their original keys.
+    entity_count = _comparison_entity_count(config)
+    if source == "youtube" and entity_count > 1:
+        request["comparison_entity_count"] = entity_count
+
+
 def _interpreter_shutting_down(exc: BaseException) -> bool:
     """An abandoned lane outliving main() can no longer start thread pools."""
     return isinstance(exc, RuntimeError) and "interpreter shutdown" in str(exc)
@@ -5564,12 +5591,13 @@ def _fetch_youtube_stream_live(
         config.get("SCRAPECREATORS_API_KEY", "")
         if env.is_youtube_sc_available(config) else None
     )
+    entity_count = _comparison_entity_count(config)
     # Try yt-dlp first; the SC transcript fallback covers per-video failures.
     if has_ytdlp:
         try:
             result = youtube_yt.search_and_transcribe(
                 yt_query, from_date, to_date, depth=depth, token=sc_token,
-                freshness_mode=freshness_mode,
+                freshness_mode=freshness_mode, entity_count=entity_count,
             )
             if result.get("error"):
                 youtube_failure = str(result["error"])
@@ -5602,7 +5630,7 @@ def _fetch_youtube_stream_live(
                 sc_result = youtube_yt.search_youtube_sc(
                     yt_query, from_date, to_date, depth=depth, token=sc_token,
                     skip_transcript_ids=transcribed_free_ids,
-                    freshness_mode=freshness_mode,
+                    freshness_mode=freshness_mode, entity_count=entity_count,
                 )
             sc_error = str(sc_result["error"]) if sc_result.get("error") else None
             if backfill_thin:
@@ -5663,7 +5691,9 @@ def _fetch_youtube_stream_live(
     if not out_of_time and youtube_yt._lane_out_of_time():
         out_of_time = "lane deadline passed"
     if items and env.is_youtube_comments_available(config) and not out_of_time:
-        youtube_yt.enrich_with_comments(items, token=sc_token or "")
+        youtube_yt.enrich_with_comments(
+            items, token=sc_token or "", entity_count=entity_count,
+        )
     if not out_of_time and youtube_yt._lane_out_of_time():
         out_of_time = "lane deadline passed"
     if out_of_time:
@@ -6148,6 +6178,7 @@ def _retrieve_stream_impl(
                 env.is_youtube_sc_available(config),
                 env.youtube_sc_min_items(config),
                 env.is_youtube_comments_available(config),
+                _comparison_entity_count(config),
             ),
             lambda: _fetch_youtube_stream(
                 yt_query, from_date, to_date, depth, config, has_ytdlp=has_ytdlp,
